@@ -95,7 +95,21 @@ gh attestation verify *.apk -R jqssun/android-titanium-browser
 
 This repository provides the build script to compile on the latest Ubuntu, and may also work with other Linux distributions.
 
-To build these releases yourself via CI (e.g. GitHub Actions), fork this repository. Supply your `base64` encoded `keystore.jks` and `local.properties` (containing `keyAlias`, `keyPassword` and `storePassword`) to [**Repository secrets**](https://github.com/jqssun/android-titanium-browser/blob/main/.github/workflows/build.yml#L49-L50) under **Settings** > **Secrets and variables** > **Actions**. To generate a release, go to **Actions**, select **Build**, and select **Run workflow**. Under **Runner**, you can either use a GitHub-hosted runner by entering `ubuntu-latest`, or `self-hosted` for your own hardware.
+### Docker
+
+Docker Desktop can build a signed APK without installing Chromium build dependencies on the host. Allocate at least 16 GB of RAM and 100 GB of free disk space to Docker before starting the build.
+
+Provide the same base64-encoded signing inputs used by CI, then choose the Android package name for the APK:
+
+```shell
+export LOCAL_TEST_JKS="$(base64 < local.properties)"
+export STORE_TEST_JKS="$(base64 < keystore.jks)"
+./docker/build-apk.sh com.example.titanium
+```
+
+The signed APKs and AAB are written to `chromium/src/out/release/`. The supplied package name is used only for that build; `args.gn` is not modified.
+
+To build without local Docker storage, fork this repository and use GitHub Actions. Supply your `base64` encoded `keystore.jks` and `local.properties` (containing `keyAlias`, `keyPassword` and `storePassword`) to [**Repository secrets**](https://github.com/jqssun/android-titanium-browser/blob/main/.github/workflows/build.yml#L49-L50) under **Settings** > **Secrets and variables** > **Actions**. To generate a release, go to **Actions**, select **Build**, and select **Run workflow**, set **Runner** to `ubuntu-latest`, and enter the desired **Package name**. GitHub-hosted runners have the required temporary disk space.
 
 ## Credits
 

@@ -1,7 +1,17 @@
 #!/bin/bash
+set -euo pipefail
 source common.sh
 set_keys
 export VERSION=$(grep -m1 -o '[0-9]\+\(\.[0-9]\+\)\{3\}' vanadium/args.gn)
+export BUILD_ARM32=${BUILD_ARM32:-1}
+if [[ "$BUILD_ARM32" != "0" && "$BUILD_ARM32" != "1" ]]; then
+	echo "BUILD_ARM32 must be 0 or 1" >&2
+	exit 1
+fi
+if [[ -n "${CHROME_PUBLIC_MANIFEST_PACKAGE:-}" ]] && ! [[ "$CHROME_PUBLIC_MANIFEST_PACKAGE" =~ ^[A-Za-z][A-Za-z0-9_]*(\.[A-Za-z][A-Za-z0-9_]*)+$ ]]; then
+	echo "CHROME_PUBLIC_MANIFEST_PACKAGE must be a dotted Android package name" >&2
+	exit 1
+fi
 export CHROMIUM_SOURCE=https://chromium.googlesource.com/chromium/src.git # https://github.com/chromium/chromium.git
 export DEBIAN_FRONTEND=noninteractive
 sudo apt-get update
@@ -16,6 +26,7 @@ git remote add origin $CHROMIUM_SOURCE
 git fetch --depth 1 $CHROMIUM_SOURCE +refs/tags/$VERSION:chromium_$VERSION
 git checkout $VERSION
 cp $SCRIPT_DIR/.gclient ../.gclient
+cd ..
 
 # https://grapheneos.org/build#browser-and-webview
 rm -rf $SCRIPT_DIR/vanadium/patches/*trichrome-{apk-build-targets,browser-apk-targets}.patch
@@ -24,22 +35,29 @@ rm -rf $SCRIPT_DIR/vanadium/patches/*javascript-optimizer-{site-setting,settings
 rm -rf $SCRIPT_DIR/vanadium/patches/*component-updates.patch
 rm -rf $SCRIPT_DIR/vanadium/patches/*{pdf,PDF,for-content-public,toolbar-button,configs-from-config-app,new-tab-card,predictive-back*}*.patch
 # rm -rf $SCRIPT_DIR/vanadium/patches/*crashpad*.patch
+cp "$SCRIPT_DIR"/patches/*.patch "$SCRIPT_DIR/vanadium/patches/"
 replace "$SCRIPT_DIR/vanadium/patches" "VANADIUM" "TITANIUM"
 replace "$SCRIPT_DIR/vanadium/patches" "Vanadium" "Titanium"
 replace "$SCRIPT_DIR/vanadium/patches" "vanadium" "titanium"
-git am --whitespace=nowarn --keep-non-patch $SCRIPT_DIR/vanadium/patches/*.patch
+git -C src am --whitespace=nowarn --keep-non-patch $SCRIPT_DIR/vanadium/patches/*.patch
 
 gclient sync -D --no-history --nohooks
 gclient runhooks
+cd src
 ./build/install-build-deps.sh --no-prompt
 
 source $SCRIPT_DIR/patch.sh
 cp $SCRIPT_DIR/args.gn out/Default/args.gn
+if [[ -n "${CHROME_PUBLIC_MANIFEST_PACKAGE:-}" ]]; then
+	sed -i "s|^chrome_public_manifest_package = \".*\"|chrome_public_manifest_package = \"$CHROME_PUBLIC_MANIFEST_PACKAGE\"|" out/Default/args.gn
+fi
 gn gen out/Default # gn args out/Default; echo 'treat_warnings_as_errors = false' >> out/Default/args.gn
 mkdir -p out/tmp out/release
 
-autoninja -C out/Default chrome_public_apk
-mv $(find out/Default/apks -name 'Chrome*.apk') out/tmp/$VERSION-armeabi-v7a.apk
+if [[ "$BUILD_ARM32" == "1" ]]; then
+	autoninja -C out/Default chrome_public_apk
+	mv $(find out/Default/apks -name 'Chrome*.apk') out/tmp/$VERSION-armeabi-v7a.apk
+fi
 sed -i 's/target_cpu = "arm"/target_cpu = "arm64"/' out/Default/args.gn
 autoninja -C out/Default chrome_public_apk chrome_public_bundle
 mv $(find out/Default/apks -name 'Chrome*.apk') out/tmp/$VERSION-arm64-v8a.apk
@@ -47,7 +65,9 @@ mv $(find out/Default/apks -name 'Chrome*.aab') out/tmp/$VERSION-arm64-v8a.aab
 
 export PATH=$PWD/third_party/jdk/current/bin/:$PATH
 export ANDROID_HOME=$PWD/third_party/android_sdk/public
-sign_apk out/tmp/$VERSION-armeabi-v7a.apk out/release/$VERSION-armeabi-v7a.apk
+if [[ "$BUILD_ARM32" == "1" ]]; then
+	sign_apk out/tmp/$VERSION-armeabi-v7a.apk out/release/$VERSION-armeabi-v7a.apk
+fi
 sign_apk out/tmp/$VERSION-arm64-v8a.apk out/release/$VERSION-arm64-v8a.apk
 sign_aab out/tmp/$VERSION-arm64-v8a.aab out/release/$VERSION-arm64-v8a.aab
 rm -rf $SCRIPT_DIR/keys

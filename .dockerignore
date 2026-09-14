@@ -1,0 +1,7 @@
+.git/
+chromium/
+depot_tools/
+keys/
+extensions/dist/
+*.apk
+*.aab

@@ -8,6 +8,11 @@ on:
         required: true
         type: string
         default: 'self-hosted' # ubuntu-latest
+      package_name:
+        description: 'Android package name for the APK'
+        required: false
+        type: string
+        default: 'io.github.jqssun.helium'
   schedule:
     - cron: '0 0 */16 * *'
 
@@ -46,10 +51,24 @@ jobs:
       - name: Build
         env:
             DEBIAN_FRONTEND: noninteractive
+            BUILD_ARM32: '0'
+            CHROME_PUBLIC_MANIFEST_PACKAGE: ${{ inputs.package_name }}
             LOCAL_TEST_JKS: ${{ secrets.LOCAL_TEST_JKS }}
             STORE_TEST_JKS: ${{ secrets.STORE_TEST_JKS }}
         run: |
           ./build.sh
+
+      - name: Upload build diagnostics
+        if: failure()
+        uses: actions/upload-artifact@v4
+        with:
+          name: siso-diagnostics-${{ github.run_id }}
+          path: |
+            chromium/src/out/Default/siso_output
+            chromium/src/out/Default/siso.INFO
+            chromium/src/out/Default/siso_failed_commands.sh
+          if-no-files-found: warn
+          retention-days: 7
 
       - name: Set
         run: |
@@ -57,7 +76,6 @@ jobs:
           echo "VERSION=$VERSION" >> $GITHUB_ENV
           mv $(find chromium/src/out/release -name '*arm64-v8a.aab') $VERSION-${{ env.unix_time }}-arm64-v8a.aab
           mv $(find chromium/src/out/release -name '*arm64-v8a.apk') $VERSION-${{ env.unix_time }}-arm64-v8a.apk
-          mv $(find chromium/src/out/release -name '*armeabi-v7a.apk') $VERSION-${{ env.unix_time }}-armeabi-v7a.apk
 
       - name: Publish
         uses: softprops/action-gh-release@v2
@@ -68,7 +86,6 @@ jobs:
           files: |
             ${{ env.VERSION }}-${{ env.unix_time }}-arm64-v8a.aab
             ${{ env.VERSION }}-${{ env.unix_time }}-arm64-v8a.apk
-            ${{ env.VERSION }}-${{ env.unix_time }}-armeabi-v7a.apk
 
       - name: Attest
         uses: actions/attest-build-provenance@v4
@@ -76,4 +93,3 @@ jobs:
           subject-path: |
             ${{ env.VERSION }}-${{ env.unix_time }}-arm64-v8a.aab
             ${{ env.VERSION }}-${{ env.unix_time }}-arm64-v8a.apk
-            ${{ env.VERSION }}-${{ env.unix_time }}-armeabi-v7a.apk
